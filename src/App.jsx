@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import FloorPlanView from './components/FloorPlanView';
 
 const TOTAL_SEATS = 50;
 const DESIGNATED_SEATS = 40;
@@ -349,6 +350,114 @@ function App() {
     setInfo('No floater or released seats available.');
   }
 
+  function bookSpecificSeatById(seatId) {
+    const dateObj = fromDateKey(selectedDate);
+    const member = getMemberById(selectedMemberId);
+    const dateKey = toDateKey(dateObj);
+
+    const eligibility = canBook(dateObj, employeeType, member);
+    if (!eligibility.ok) {
+      const messageText = eligibility.reason;
+      setInfo(messageText);
+      return { ok: false, message: messageText };
+    }
+
+    const dayBooking = { ...readDayBooking(dateKey) };
+
+    for (const seat of Object.keys(dayBooking)) {
+      if (dayBooking[seat]?.memberId === member.id) {
+        const messageText = `Already booked: ${seat}`;
+        setInfo(messageText);
+        return { ok: false, message: messageText };
+      }
+    }
+
+    if (dayBooking[seatId]) {
+      const messageText = `Seat ${seatId} is already occupied.`;
+      setInfo(messageText);
+      return { ok: false, message: messageText };
+    }
+
+    const isDesignatedSeat = seatId.startsWith(DESIGNATED_PREFIX);
+    const isFloaterSeat = seatId.startsWith(FLOATER_PREFIX);
+    const releasedForDay = releases[dateKey] || [];
+    const isReleasedSeat = releasedForDay.includes(seatId);
+
+    if (isFloaterSeat) {
+      if (employeeType !== 'non_designated') {
+        const messageText = 'Only non-designated members can book floater seats.';
+        setInfo(messageText);
+        return { ok: false, message: messageText };
+      }
+
+      if (isBlockedForDate(dateKey)) {
+        const messageText = 'Non-designated booking blocked for this day after 3 PM rule.';
+        setInfo(messageText);
+        return { ok: false, message: messageText };
+      }
+
+      dayBooking[seatId] = {
+        seat: seatId,
+        memberId: member.id,
+        memberName: member.name,
+        type: 'non_designated'
+      };
+      writeDayBooking(dateKey, dayBooking);
+      const messageText = `Booked floater ${seatId} for ${member.name}.`;
+      setInfo(messageText);
+      return { ok: true, message: messageText };
+    }
+
+    if (isDesignatedSeat) {
+      if (isReleasedSeat) {
+        if (employeeType !== 'non_designated') {
+          const messageText = 'Released designated seats are reserved for non-designated booking.';
+          setInfo(messageText);
+          return { ok: false, message: messageText };
+        }
+
+        dayBooking[seatId] = {
+          seat: seatId,
+          memberId: member.id,
+          memberName: member.name,
+          type: 'non_designated_release'
+        };
+        writeDayBooking(dateKey, dayBooking);
+        const messageText = `Booked released seat ${seatId} for ${member.name}.`;
+        setInfo(messageText);
+        return { ok: true, message: messageText };
+      }
+
+      if (employeeType !== 'designated') {
+        const messageText = 'Only designated members can book designated seats (unless released).';
+        setInfo(messageText);
+        return { ok: false, message: messageText };
+      }
+
+      const designatedSeat = getDesignatedSeatForMember(member);
+      if (seatId !== designatedSeat) {
+        const messageText = `You can only book your assigned seat (${designatedSeat}).`;
+        setInfo(messageText);
+        return { ok: false, message: messageText };
+      }
+
+      dayBooking[seatId] = {
+        seat: seatId,
+        memberId: member.id,
+        memberName: member.name,
+        type: 'designated'
+      };
+      writeDayBooking(dateKey, dayBooking);
+      const messageText = `Booked ${seatId} for ${member.name}.`;
+      setInfo(messageText);
+      return { ok: true, message: messageText };
+    }
+
+    const messageText = 'Unknown seat type.';
+    setInfo(messageText);
+    return { ok: false, message: messageText };
+  }
+
   function releaseSeatForVacation() {
     const member = getMemberById(selectedMemberId);
     const dateObj = fromDateKey(selectedDate);
@@ -453,6 +562,11 @@ function App() {
     setSelectedWeekStart(startOfWeekMonday(new Date()));
   }
 
+  function handleFloorPlanBookingRequest(seat) {
+    if (!seat?.seatId) return { ok: false, message: 'Invalid seat.' };
+    return bookSpecificSeatById(seat.seatId);
+  }
+
   const selectedCalendarDetails = selectedCalendarDateKey
     ? weekAllocationForDate(fromDateKey(selectedCalendarDateKey))
     : null;
@@ -493,8 +607,8 @@ function App() {
       </header>
 
       <main className="grid">
-        <section className="panel">
-          <h2>Booking Desk</h2>
+        <section className="panel booking-context">
+          <h2>Booking Context</h2>
 
           <div className="fields">
             <label>
@@ -542,9 +656,6 @@ function App() {
           </div>
 
           <div className="action-row">
-            <button className="btn btn-primary" onClick={bookSeat}>
-              Book Seat
-            </button>
             <button className="btn" onClick={releaseSeatForVacation}>
               Release for Vacation
             </button>
@@ -694,6 +805,16 @@ function App() {
             </aside>
           ) : null}
         </section>
+
+        <FloorPlanView
+          selectedDate={selectedDate}
+          bookingsForDate={readDayBooking(selectedDate)}
+          releasesForDate={releases[selectedDate] || []}
+          blockedForDate={isBlockedForDate(selectedDate)}
+          onRequestBooking={handleFloorPlanBookingRequest}
+          assignedSeatId={employeeType === 'designated' ? getDesignatedSeatForMember(getMemberById(selectedMemberId)) : null}
+          currentMemberName={getMemberById(selectedMemberId).name}
+        />
       </main>
     </div>
   );
