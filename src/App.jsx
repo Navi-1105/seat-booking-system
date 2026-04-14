@@ -158,7 +158,6 @@ function App() {
   const [selectedSquadId, setSelectedSquadId] = useState(1);
   const [selectedMemberId, setSelectedMemberId] = useState(defaultMember.id);
   const [selectedDate, setSelectedDate] = useState(toDateKey(new Date()));
-  const [holidayInput, setHolidayInput] = useState('');
   const [holidays, setHolidays] = useState(persisted?.holidays || []);
   const [bookings, setBookings] = useState(persisted?.bookings || {});
   const [releases, setReleases] = useState(persisted?.releases || {});
@@ -508,26 +507,6 @@ function App() {
     setInfo(`Next working day (${targetKey}) blocked for non-designated booking.`);
   }
 
-  function addHoliday() {
-    if (!holidayInput) {
-      setInfo('Please select a holiday date.');
-      return;
-    }
-
-    if (holidays.includes(holidayInput)) {
-      setInfo('Holiday already exists.');
-      return;
-    }
-
-    setHolidays((prev) => [...prev, holidayInput].sort());
-    setHolidayInput('');
-    setInfo('Holiday added.');
-  }
-
-  function removeHoliday(dateKey) {
-    setHolidays((prev) => prev.filter((d) => d !== dateKey));
-  }
-
   function weekAllocationForDate(dateObj) {
     const dateKey = toDateKey(dateObj);
     const dayBooking = readDayBooking(dateKey);
@@ -580,10 +559,6 @@ function App() {
         <div>
           <p className="eyebrow">Org Space Engine</p>
           <h1>Seat Booking System</h1>
-          <p className="sub">
-            Built for maximum utilization with designated batches, floater controls,
-            holiday lock, and week-wise allocation visibility.
-          </p>
         </div>
 
         <div className="kpi-grid">
@@ -609,6 +584,7 @@ function App() {
       <main className="grid">
         <section className="panel booking-context">
           <h2>Booking Context</h2>
+          <p className="seat-hint">Select member context below, then book directly from the seating plan.</p>
 
           <div className="fields">
             <label>
@@ -668,36 +644,19 @@ function App() {
         </section>
 
         <section className="panel">
-          <h2>Policy Board</h2>
-          <ul className="rules">
-            <li>Batch 1 (Squads 1-5): Week1 Mon-Wed, Week2 Thu-Fri</li>
-            <li>Batch 2 (Squads 6-10): Week1 Thu-Fri, Week2 Mon-Wed</li>
-            <li>Non-designated booking: floater first, then released designated seats</li>
-            <li>Holiday and weekend booking disabled</li>
-            <li>Post 3 PM blocking applies to next working day</li>
-          </ul>
-
-          <div className="holiday-box">
-            <h3>Holiday Manager</h3>
-            <div className="holiday-row">
-              <input
-                type="date"
-                value={holidayInput}
-                onChange={(e) => setHolidayInput(e.target.value)}
-              />
-              <button className="btn" onClick={addHoliday}>
-                Add Holiday
-              </button>
-            </div>
-            <div className="chips">
-              {holidays.length === 0 && <span className="chip muted">No holidays</span>}
+          <h2>Holiday List</h2>
+          <p className="seat-hint">
+            Source: Static mode - no external holiday API
+          </p>
+          {holidays.length === 0 ? (
+            <p className="seat-hint">No holidays configured.</p>
+          ) : (
+            <ul className="rules">
               {holidays.map((holiday) => (
-                <button key={holiday} className="chip" onClick={() => removeHoliday(holiday)}>
-                  {holiday} x
-                </button>
+                <li key={`list-${holiday}`}>{holiday}</li>
               ))}
-            </div>
-          </div>
+            </ul>
+          )}
         </section>
 
         <section className="panel panel-wide">
