@@ -5,7 +5,7 @@ const DESIGNATED_SEATS = 40;
 const FLOATER_SEATS = 10;
 const DESIGNATED_PREFIX = 'D';
 const FLOATER_PREFIX = 'F';
-const STORAGE_KEY = 'seat-booking-state-v1';
+const STORAGE_KEY = 'seat-booking-state-v1'; // kept as offline fallback
 
 const squads = Array.from({ length: 10 }, (_, i) => ({
   id: i + 1,
@@ -128,6 +128,22 @@ function getInitialState() {
   return null;
 }
 
+async function apiGetState() {
+  const res = await fetch('/api/state');
+  if (!res.ok) throw new Error('Failed to load state');
+  return res.json();
+}
+
+async function apiPutState(payload) {
+  const res = await fetch('/api/state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('Failed to save state');
+  return res.json();
+}
+
 function getDesignatedSeatForMember(member) {
   const relativeSquadIndex = member.batch === 1 ? member.squadId - 1 : member.squadId - 6;
   const seatNo = relativeSquadIndex * 8 + Number(member.id.split('M')[1]);
@@ -149,6 +165,8 @@ function App() {
   const [message, setMessage] = useState('');
   const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(null);
   const messageTimerRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const hasLoadedFromApiRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem(
@@ -160,6 +178,43 @@ function App() {
         blockedNextDay
       })
     );
+  }, [holidays, bookings, releases, blockedNextDay]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await apiGetState();
+        if (cancelled) return;
+        if (remote && typeof remote === 'object') {
+          setHolidays(Array.isArray(remote.holidays) ? remote.holidays : []);
+          setBookings(remote.bookings && typeof remote.bookings === 'object' ? remote.bookings : {});
+          setReleases(remote.releases && typeof remote.releases === 'object' ? remote.releases : {});
+          setBlockedNextDay(
+            remote.blockedNextDay && typeof remote.blockedNextDay === 'object' ? remote.blockedNextDay : {}
+          );
+          hasLoadedFromApiRef.current = true;
+          setInfo('Loaded state from MongoDB.');
+        }
+      } catch {
+        hasLoadedFromApiRef.current = true;
+        setInfo('Backend not reachable. Using local data (offline mode).');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedFromApiRef.current) return;
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      apiPutState({ holidays, bookings, releases, blockedNextDay }).catch(() => {
+        // Keep working offline if backend is down
+      });
+    }, 350);
   }, [holidays, bookings, releases, blockedNextDay]);
 
   useEffect(() => {
